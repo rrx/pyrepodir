@@ -1,0 +1,150 @@
+#!/usr/bin/env python
+
+if __name__ == '__main__':
+    from subprocess import call, Popen, PIPE, STDOUT
+    import yaml
+    import urllib
+
+    from git import Repo
+
+    import os
+    import sys
+
+    def get_full_path(dirname):
+        return os.path.abspath(dirname)
+
+    if sys.argv[1] in ['init']:
+        url = sys.argv[2]
+        fp = urllib.urlopen(url)
+        urllib.urlretrieve(url,".manifest.yaml")
+        sys.exit()
+
+    if not os.path.exists(".manifest.yaml"):
+        print "Missing manifest, run init"
+        sys.exit()
+
+
+    v = yaml.load(open(".manifest.yaml", "rb"))
+    assert(isinstance(v,dict))
+    _repos = v
+
+    parts = sys.argv[1].split(':')
+
+    cmd = parts[0]
+    if len(parts) > 1:
+        spec = parts[1]
+
+    repos = {}
+    for k in ['default',spec]:
+        for kk,vv in _repos[k].items():
+            repos[kk] = vv
+
+    from StringIO import StringIO
+
+    #pager = StringIO()#Popen(['less', '-F', '-R', '-S', '-X', '-K'], stdin=PIPE, stdout=sys.stdout)
+
+    def execute(cmdstring,path=None):
+        print "%s: %s" % (path,cmdstring)
+        if not isinstance(cmdstring,list):
+            cmdstring = cmdstring.split()
+
+        p = Popen(cmdstring, cwd=path)#, stdout=pager.stdin,stderr=pager.stdin)
+        #out, err = p.communicate()
+        #print out,err
+        p.wait()
+        code = p.returncode
+        if code not in [0]:
+            print 'exit code', code
+            sys.exit(code)
+
+
+    for r in repos.values():
+        path = get_full_path(r['path'])
+        print "%s:" % path
+
+        if not os.path.exists(path):
+            if cmd in ['update','reset']:
+                execute("git clone %(url)s --branch %(revision)s" % r)
+            continue
+
+        repo = Repo(path)
+
+        if cmd in ['diff']:
+            execute('git --no-pager diff --color=always %(revision)s' % r,r['path'])
+
+            #pcmd = Popen(['git','--no-pager','diff','--color=always', r['revision']], cwd=path, stdout=PIPE)
+            #pager = Popen(['less', '-F', '-R', '-S', '-X', '-K'], stdin=pcmd.stdout, stdout=sys.stdout)
+            #output = pager.communicate()
+            #print 'out',output
+            #ls = subprocess.Popen('ls /etc'.split(), stdout=subprocess.PIPE)
+            #grep = subprocess.Popen('grep ntp'.split(), stdin=ls.stdout, stdout=subprocess.PIPE)
+            #output = grep.communicate()[0]
+            #p.wait()
+
+        elif cmd in ['status']:
+
+            print 'path',path
+            execute('git status',r['path'])
+
+        elif cmd in ['reset']:
+
+            #this is dangerous and I don't like it, this is what pip does
+            #reset to match remote origin
+            #discards changes
+            #don't allow this without a status check.  There is no reason to do this an destroy changes
+            #only allow if the force flag is present
+            assert(not "Not implemented as safe.")
+            execute('git fetch origin',r['path'])
+            execute('git checkout %(revision)s' % r,r['path'])
+            execute('git reset --hard origin/%(revision)s' % r,r['path'])
+
+        elif cmd in ['update2']:
+            ref = r['revision']
+            print "%s:" % r['path']
+            print 'current commit', repo.head.commit
+            print 'url',repo.remotes.origin.url
+
+            commit_remote = repo.rev_parse(ref)
+            if not commit_remote:
+                #print repo.remotes.origin.tag
+                print 'not found on sever',ref
+                sys.exit(1)
+
+            commit_local = None
+            try:
+                commit_local = repo.remotes.origin.refs[ref]
+            except IndexError:
+                pass
+
+            print 'ref local',commit_local,'remote',commit_remote
+
+            if not commit_remote:
+                #print repo.remotes.origin.tag
+                print 'not found on local',ref
+                sys.exit(1)
+
+
+
+            #print 'revision',repo.refs[r['revision']],repo.tags[r['revision']]
+            #origin = repo.create_remote('origin', repo.remotes.origin.url)
+
+            execute('git fetch origin',r['path'])
+            #execute('git checkout %s -b %s' % (commit_remote,r['revision']),r['path'])
+            execute('git checkout %s' % (commit_remote),r['path'])
+            execute('git reset --merge %s' % commit_remote,r['path'])
+
+        elif cmd in ['update']:
+            execute('git fetch origin',r['path'])
+            #execute('git checkout %s -b %s' % (commit_remote,r['revision']),r['path'])
+            execute('git checkout %(revision)s' % r, r['path'])
+            execute('git pull origin %(revision)s' % r, r['path'])
+
+        elif cmd in ['install']:
+            p = Popen(['python', 'setup.py', 'develop'], cwd=r['path'])
+            p.wait()
+        else:
+            assert(False)
+
+    #pager.stdin.close()
+    #pager.wait()
+
