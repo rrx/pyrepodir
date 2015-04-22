@@ -31,13 +31,15 @@ if __name__ == '__main__':
     parts = sys.argv[1].split(':')
 
     cmd = parts[0]
+    spec = None
     if len(parts) > 1:
         spec = parts[1]
 
     repos = {}
     for k in ['default',spec]:
-        for kk,vv in _repos[k].items():
-            repos[kk] = vv
+        if k and k in _repos:
+            for kk,vv in _repos[k].items():
+                repos[kk] = vv
 
     from StringIO import StringIO
 
@@ -60,7 +62,6 @@ if __name__ == '__main__':
 
     for r in repos.values():
         path = get_full_path(r['path'])
-        print "%s:" % path
 
         if not os.path.exists(path):
             if cmd in ['update','reset']:
@@ -70,7 +71,7 @@ if __name__ == '__main__':
         repo = Repo(path)
 
         if cmd in ['diff']:
-            execute('git --no-pager diff --color=always %(revision)s' % r,r['path'])
+            execute('git --no-pager diff --color=always %(revision)s' % r,path)
 
             #pcmd = Popen(['git','--no-pager','diff','--color=always', r['revision']], cwd=path, stdout=PIPE)
             #pager = Popen(['less', '-F', '-R', '-S', '-X', '-K'], stdin=pcmd.stdout, stdout=sys.stdout)
@@ -82,9 +83,7 @@ if __name__ == '__main__':
             #p.wait()
 
         elif cmd in ['status']:
-
-            print 'path',path
-            execute('git status',r['path'])
+            execute('git status --short --branch',path)
 
         elif cmd in ['reset']:
 
@@ -134,9 +133,14 @@ if __name__ == '__main__':
             execute('git reset --merge %s' % commit_remote,r['path'])
 
         elif cmd in ['update']:
+            #get updates from origin
             execute('git fetch origin',r['path'])
-            #execute('git checkout %s -b %s' % (commit_remote,r['revision']),r['path'])
+
+            #set the branch to match the revision
             execute('git checkout %(revision)s' % r, r['path'])
+            #execute('git checkout %s -b %s' % (commit_remote,r['revision']),r['path'])
+
+            #pull from origin
             execute('git pull origin %(revision)s' % r, r['path'])
 
         elif cmd in ['install']:
